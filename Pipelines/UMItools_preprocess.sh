@@ -5,6 +5,17 @@ echo "Starting $(basename "$0")"
 mkdir -p output
 mkdir -p data
 mkdir -p mapping
+
+# Exit code function
+exit_code_function () {
+	exit_code=$?
+	if (($exit_code != 0))
+	then
+    	echo -e "\nERROR in: $1"
+    	exit $exit_code  
+	fi
+}
+
 # Copiar fastqs o descarregarlos
 data=$"/home/student/Work/Datasets/5k_mouse_brain_CNIK_3pv3_fastqs"
 index=$"/home/student/Work/Refs/STARindex_mmGRCm39/"
@@ -17,7 +28,7 @@ echo "Setname is $setname"
 
 # Juntar lanes
 numfiles=$(ls $data/ | wc -l)
-if (($numfiles == 4))
+if (($numfiles <= 4))
 then 
 	echo "No merging needed"
 	R1=$(ls $data | grep "R1")
@@ -52,6 +63,8 @@ else
 	whitelist=output/whitelist.txt
 fi
 
+exit_code_function "umi_tools whitelist"
+
 # Step 3: Extract barcdoes and UMIs and add to read names
 if test -f output/EXTRACTED_"$setname"_R1.fastq.gz
 then
@@ -69,6 +82,8 @@ else
 	
 fi
 
+exit_code_function "umi_tools extract"
+
 # Step 4: Mapping
 if test -d _STARtmp
 then
@@ -84,6 +99,8 @@ else
 	     --outFileNamePrefix mapping/;
 fi
 
+exit_code_function "STAR"
+
 # Step 5: Assign reads to genes
 featureCounts -p \
 	--countReadPairs \
@@ -92,10 +109,13 @@ featureCounts -p \
 	-R BAM \
 	-T 12 \
 	mapping/Aligned.sortedByCoord.out.bam;
-	
+exit_code_function "featureCounts"
 
 samtools sort mapping/Aligned.sortedByCoord.out.bam.featureCounts.bam -o mapping/assigned_sorted.bam
+exit_code_function "samtools sort"
+
 samtools index mapping/assigned_sorted.bam 
+exit_code_function "samtools index"
 
 umi_tools count \
 	--per-gene \
@@ -104,6 +124,7 @@ umi_tools count \
 	--per-cell \
 	-I mapping/assigned_sorted.bam \
 	-S output/counts.tsv.gz
+exit_code_function "umi_tools count"
 
 echo "End of script."
 

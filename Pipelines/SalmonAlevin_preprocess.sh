@@ -4,6 +4,16 @@ echo "Starting $(basename "$0")"
 
 mkdir -p output
 
+# Exit code function
+exit_code_function () {
+	exit_code=$?
+	if (($exit_code != 0))
+	then
+    	echo -e "\nERROR in: $1"
+    	exit $exit_code  
+	fi
+}
+
 # Copiar fastqs o descarregarlos
 data=$"/home/student/Work/Datasets/5k_mouse_brain_CNIK_3pv3_fastqs"
 index=$"/home/student/Work/Refs/SALMON/salmon_index"
@@ -15,7 +25,7 @@ echo "Setname is $setname"
 
 # Juntar lanes
 numfiles=$(ls $data/ | wc -l)
-if (($numfiles == 4))
+if (($numfiles <= 4))
 then 
 	echo "No merging needed"
 	R1=$(ls $data | grep "R1")
@@ -48,4 +58,4 @@ salmon alevin -l ISF \
 	-o output \
 	--tgMap $t2g
 
-
+exit_code_function "salmon alevin"

@@ -4,16 +4,29 @@ echo "Starting $(basename "$0")"
 
 mkdir output
 
-# Indicar ruta del dataset, el transcript to gene i l'index kallisto de l'especie
+# Exit code function
+exit_code_function () {
+	exit_code=$?
+	if (($exit_code != 0))
+	then
+    	echo -e "\nERROR in: $1"
+    	exit $exit_code  
+	fi
+}
+
+# Set dataset and index path
 data=$"/home/student/Work/Datasets/Human/GSM3295024/"
 t2g=$"/home/student/Work/Refs/Human/T2G/t2g.tsv"
 index=$"/home/student/Work/Refs/Human/index_KB/index_KB"
 
-# Nom del dataset
+# Which technolgy was used to produce the dataset
+tech="10xv3"
+
+# Find out the name of the dataset
 setname=$(ls $data/ | sed -E  -n "/[_L00]{4}[0-9]+.*/s/[_L00]{4}[0-9]+.*//p" | head -1)
 echo "Setname is $setname" 
 
-# Juntar lanes
+# Merge lanes if needed 
 numfiles=$(ls $data/ | wc -l)
 if (($numfiles <= 4))
 then 
@@ -37,9 +50,11 @@ else
 	fi
 fi
 
-# Indicar quina tecnologia utilitzar (kb count --list)
-tech="10xv3"
+
 
 # Run kb count
 echo "Starting count.."
 kb count -i $index -g $t2g -x $tech -o output/ $R1 $R2
+
+# Exit code
+exit_code_function "kb count"
