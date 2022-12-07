@@ -1,0 +1,229 @@
+---
+title: "Downstream Analysis Notebook"
+author: "Dídac Jiménez"
+date: "2022-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preparation and setup
+
+### Libraries
+
+Load libraries used in this notebook., indicate the preprocessing tool used, the species, and the path to the files.
+
+```{r echo=FALSE, warning=FALSE}
+library(Seurat, quietly = TRUE)
+library(tidyverse, quietly = TRUE)
+library(Matrix, quietly = TRUE) # load libraries
+library(DropletUtils, quietly = TRUE)
+```
+
+### Set parameters
+
+Indicate the preprocessing tool used, the species, and the path to the files.
+
+```{r}
+projectname<-"Prototype"
+tool<-"KallistoBustools" # "KallistoBustools", "UmiTools or "SalmonAlevin
+matrixpath<-"~/Work/Runs/KB_R5/output/counts_unfiltered/cells_x_genes.mtx"
+featurespath<-"~/Work/Runs/KB_R5/output/counts_unfiltered/cells_x_genes.genes.txt" #Only for KB
+cellspath<-"~/Work/Runs/KB_R5/output/counts_unfiltered/cells_x_genes.barcodes.txt" #Only for KB
+MT_genespath<-"~/Work/Refs/Human/MTgenes"
+```
+
+### Load raw files into counts matrix
+
+Outputs from each preprocessing tool are different. I will define and use different functions to generate a counts matrix.
+
+```{r}
+if (tool == "KallistoBustools"){
+  counts<-ReadMtx(
+    mtx = matrixpath,
+    cells = cellspath,
+    features = featurespath,
+    cell.column = 1,
+    feature.column = 1,
+    cell.sep = "\t",
+    feature.sep = "\t",
+    skip.cell = 0,
+    skip.feature = 0,
+    mtx.transpose = TRUE,
+    unique.features = TRUE,
+    strip.suffix = FALSE
+)
+  # Ensembl version removal
+  rownames(counts)<-sub('\\.[0-9]*$', '', rownames(counts))
+}
+
+if (tool == "SalmonAlevin"){
+  txi <- tximport::tximport(matrixpath, type="alevin")
+  counts<-txi$counts
+  # Ensembl version removal
+  rownames(counts)<- sub('\\.[0-9]*$', '', rownames(txi$counts))
+}
+
+if (tool == "UmiTools"){
+  counts <- Read10X(sub("matrix.mtx.gz","",matrixpath), 
+                  gene.column = 1)
+}
+
+```
+
+### Tag mitochondrial genes
+
+Mitochondrial genes must have a tag on their name so that we can use the proportion of mitochondrial transcripts as a quality control measure. This is better done before the construction of the `Seurat` object. For this we will use a list of all mitochondrial genes (species dependent!) previously acquired. 
+
+```{r}
+#List of the names of our genes
+gene_names<-data.frame(ens=rownames(counts))
+
+# List generated Using Biomart from Ensembl to  create a list of ENS genes corresponding to mitochondrial genes 
+MT_genes<-data.frame(MT=read_csv(MT_genespath, show_col_types = FALSE))
+
+# Loop through all gene names and tag those found in the list
+MT_count <-0
+for (i in 1:length(gene_names$ens)){
+  if (gene_names$ens[i] %in% MT_genes$ensembl_gene_id){
+    MT_count<-MT_count+1 # To check if it works
+    gene_names$ens[i] <- paste(c("MT-",gene_names$ens[i]),sep="",collapse = "")
+  }
+}
+
+# Change row names of counts matrix 
+row.names(counts)<-gene_names$ens
+
+# Remove non useful objects
+#rm(gene_names,MT_genes,MT_count)
+```
+
+
+### Generate Seurat object
+
+Finally we create the 'Seurat' object which we will use to proceed with the analysis.
+
+```{r}
+seurat.obj <- CreateSeuratObject(counts = counts, 
+                                 project = "projectname", 
+                                 min.cells = 1, 
+                                 min.features = 1)
+```
+
+## Quality Control
+
+### Data exploration
+
+First we compute the percentage of mitochondrial transcripts for each cell, to use in later filtering. 
+
+```{r}
+# We use the label we added earlier and add the percentage as a column in the metadata of each cell
+seurat.obj[["percent.mt"]]<-PercentageFeatureSet(seurat.obj,pattern = "MT")
+```
+
+We then plot the three metadata values: Mitochondrial percentage, number of molecules and number of features. A good dataset should have linear relationship between number of features and number of molecules, though a plateau is fine. As for the violin plot, we will use it to set the limits for our filtering.
+
+```{r}
+VlnPlot(seurat.obj, features = c("nCount_RNA","nFeature_RNA","percent.mt"), ncol = 3)
+FeatureScatter(seurat.obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")+geom_smooth(method='lm')
+```
+
+### Filtering
+
+We filter the cells by setting a limit on:
+*Mitochondrial percentage: An upper limit, high values may indicate a broken nucleus, thus a compromised cell
+*Number of molecules: An upper limit, very high values may indicate the droplet contained two cells
+*Number of features: A lower limit, droplets with too few features may only contein environmental RNA
+
+These filters depend on each dataset and should be changed on each execution.
+
+```{r}
+seurat.obj <- subset(seurat.obj,
+                     subset=nFeature_RNA >500 &nCount_RNA < 3000 & percent.mt <10)
+```
+
+We make the violin plots again to check the filtering:
+
+```{r}
+VlnPlot(seurat.obj, features = c("nCount_RNA","nFeature_RNA","percent.mt"), ncol = 3)
+FeatureScatter(seurat.obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")+geom_smooth(method='lm')
+```
+
+## Notmalization and scaling
+
+### Normalization
+
+Normalize the values so we can make comparisons across cells. Each value is divided by the total expression in its cell, multiplied by a scale
+factor and then log transformed.
+
+```{r}
+seurat.obj<-NormalizeData(seurat.obj,normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+### Highly variable features
+
+We do this to focus our analysis on the genes that differentiate our cells.
+
+```{r}
+seurat.obj <- FindVariableFeatures(seurat.obj, selection.method = "vst", nfeatures = 2000)
+```
+
+### Scale data
+
+We run `ScaleData()` to shift the expression of each gene, so that the mean expression across cells is 0 and scales the expression of each gene, so that the variance across cells is 1. This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate and is a required step prior to dimensional reduction techniques.
+
+```{r}
+gene_names <- rownames(seurat.obj)
+seurat.obj <- ScaleData(seurat.obj, features = gene_names)
+```
+
+## Dimension reduction
+
+### Principal Component Analysis
+
+We run the analysis with `RunPCA()`. 
+
+```{r}
+seurat.obj <- RunPCA(seurat.obj, features =VariableFeatures(seurat.obj))
+```
+
+We make an elbow plot. We want to keep enough PC's to capture most of the variation
+
+```{r}
+ElbowPlot(seurat.obj)
+```
+
+### Clustering
+
+Here we specify how many PCA's to use and the resolutions for the cluster.
+
+```{r}
+seurat.obj <- FindNeighbors(seurat.obj,dims = 1:10)
+seurat.obj <- FindClusters(seurat.obj,resolution = c(0.05,0.4,0.6,0.8,1))
+DimPlot(seurat.obj, group.by = "RNA_snn_res.0.8", label = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

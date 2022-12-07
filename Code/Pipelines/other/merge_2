@@ -1,0 +1,22 @@
+#!/bin/bash
+
+listSamples=()
+
+# loop to add the unique samples to an array
+for i in data/*.fastq.gz;
+do
+    if [[ "$sampleName" =~ "${listSamples[@]}" ]]; then
+        sampleName=$(echo $i | cut -d'_' -f1)
+        listSamples+=("$sampleName")
+    fi
+done
+
+# loop in the newly created array of samples and group them by reads number
+for i in "${listSamples[@]}"
+do
+    cat "$i"_*_R1_* > "$i"_R1.fastq.gz
+    cat "$i"_*_R2_* > "$i"_R2.fastq.gz
+    cat "$i"_*_I1_* > "$i"_I1.fastq.gz
+    cat "$i"_*_I2_* > "$i"_I2.fastq.gz
+    
+done
