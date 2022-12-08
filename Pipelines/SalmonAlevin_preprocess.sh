@@ -2,14 +2,14 @@
 
 echo "Starting $(basename "$0")"
 
-source module.sh
+source /home/student/Work/Code/scRNAseq-Preprocessing-benchmark/Pipelines/module.sh
 
 mkdir output
 
 # Copiar fastqs o descarregarlos
-data=$"/home/student/Work/Datasets/5k_mouse_brain_CNIK_3pv3_fastqs"
-index=$"/home/student/Work/Refs/SALMON/salmon_index"
-t2g=$"/home/student/Work/Refs/t2g/t2g.tsv"
+data=$"/home/student/Work/Datasets/Mouse/SRR6835871/10X_P8_15/10X_P8_15_MissingLibrary_1_H3FYJDMXX"
+index=$"/home/student/Work/Refs/Mouse/SALMON/salmon_index"
+t2g=$"/home/student/Work/Refs/Mouse/T2G/t2g.tsv"
 
 # Get sample name
 setname=$(ls $data/ | sed -E  -n "/[_L00]{4}[0-9]+.*/s/[_L00]{4}[0-9]+.*//p" | head -1)
