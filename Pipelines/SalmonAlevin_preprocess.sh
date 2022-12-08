@@ -23,7 +23,7 @@ merge_files $data
 /usr/bin/time -v -o time.txt salmon alevin -l ISF \
 		-1 $R1 \
 		-2 $R2 \
-		--chromiumV3 \
+		--chromium \
 		-i $index \
 		-p 4 \
 		-o output \
