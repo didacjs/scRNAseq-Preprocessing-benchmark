@@ -13,11 +13,14 @@ exit_code_function () {
 
 # Takes the dataset's directory 
 merge_files (){
+	# Check if the $data directory exists
 	if [ ! -d $1 ]
 	then
 		echo "Directory $1 not found"
 		exit
-	fi 
+	fi
+
+	# Asuming Index files are present, directories with up to 4 files dont have R1 and R2 in separate lanes 
 	numfiles=$(ls $1/ | wc -l)
 	if (($numfiles <= 4))
 	then 
@@ -26,6 +29,8 @@ merge_files (){
 		R1=$(echo $1/$R1)
 		R2=$(ls $1 | grep "R2")
 		R2=$(echo $1/$R2)
+
+		# Check if the files at path $R1 $R2 exist
 		if [ ! -f $R1 ]
 		then
 			echo "R1 Should be at $R1"
@@ -37,11 +42,16 @@ merge_files (){
 			echo "R2 Should be at $R2"
 			echo "File $R2 not found"
 			exit
-		fi 
+		fi
+
+	# If more than 4 files are present at $data, R1 and R2 could be in separate lanes  
 	else
+		# Perhaps the lanes were merged in a previous run?
 		if test -f data/READY_"$setname"_R1.fastq.gz
 		then
 			echo "Lanes already merged"
+			R1=data/READY_"$setname"_R1.fastq.gz
+			R2=data/READY_"$setname"_R2.fastq.gz
 		else
 			echo "Merging lanes"
 			mkdir -p data
