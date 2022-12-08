@@ -20,13 +20,13 @@ merge_files $data
 
 # Runing salmon alevin
 
-salmon alevin -l ISF \
-	-1 $R1 \
-	-2 $R2 \
-	--chromiumV3 \
-	-i $index \
-	-p 4 \
-	-o output \
-	--tgMap $t2g
+/usr/bin/time -v -o time.txt salmon alevin -l ISF \
+		-1 $R1 \
+		-2 $R2 \
+		--chromiumV3 \
+		-i $index \
+		-p 4 \
+		-o output \
+		--tgMap $t2g
 
 exit_code_function "salmon alevin"

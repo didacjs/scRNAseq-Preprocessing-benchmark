@@ -27,10 +27,10 @@ then
 	echo "Whitelist is present"
 else
 	echo "Running umi_tools whitelist.."
-	umi_tools whitelist --stdin $R1 \
-        	            --bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNN \
-        	            --set-cell-number=5000 \
-        	            --log2stderr > output/whitelist.txt;
+	/usr/bin/time -v -o time.txt umi_tools whitelist --stdin $R1 \
+							--bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNN \
+							--set-cell-number=5000 \
+							--log2stderr > output/whitelist.txt;
 	whitelist=output/whitelist.txt
 fi
 
@@ -42,12 +42,12 @@ then
 	echo "Barcodes already extracted"
 else
 	echo "Running umi_tools extract.."
-	umi_tools extract --bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNN \
-		          --stdin $R1 \
-		          --stdout data/EXTRACTED_"$setname"_R1.fastq.gz \
-		          --read2-in $R2 \
-		          --read2-out data/EXTRACTED_"$setname"_R2.fastq.gz \
-		          --whitelist output/whitelist.txt;
+	/usr/bin/time -v -o -a time.txt umi_tools extract --bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNN \
+					--stdin $R1 \
+					--stdout data/EXTRACTED_"$setname"_R1.fastq.gz \
+					--read2-in $R2 \
+					--read2-out data/EXTRACTED_"$setname"_R2.fastq.gz \
+					--whitelist output/whitelist.txt;
 	R1=data/EXTRACTED_"$setname"_R1.fastq.gz
 	R2=data/EXTRACTED_"$setname"_R2.fastq.gz
 	
@@ -61,34 +61,34 @@ then
 	echo "Mapping had already started but did not finish."
 else
 	echo "Running STAR mapping.."
-	STAR --runThreadN 6 \
-	     --genomeDir $index \
-	     --readFilesIn $R2 $R1 \
-	     --readFilesCommand zcat \
-	     --outFilterMultimapNmax 1 \
-	     --outSAMtype BAM SortedByCoordinate \
-	     --outFileNamePrefix mapping/;
+	/usr/bin/time -v -o -a time.txt STAR --runThreadN 6 \
+			--genomeDir $index \
+			--readFilesIn $R2 $R1 \
+			--readFilesCommand zcat \
+			--outFilterMultimapNmax 1 \
+			--outSAMtype BAM SortedByCoordinate \
+			--outFileNamePrefix mapping/;
 fi
 
 exit_code_function "STAR"
 
 # Step 5: Assign reads to genes
-featureCounts -p \
-	--countReadPairs \
-	-a $gtf \
-	-o mapping/gene_assigned.bam \
-	-R BAM \
-	-T 12 \
-	mapping/Aligned.sortedByCoord.out.bam;
+/usr/bin/time -v -o -a time.txt featureCounts -p \
+		--countReadPairs \
+		-a $gtf \
+		-o mapping/gene_assigned.bam \
+		-R BAM \
+		-T 12 \
+		mapping/Aligned.sortedByCoord.out.bam;
 exit_code_function "featureCounts"
 
-samtools sort mapping/Aligned.sortedByCoord.out.bam.featureCounts.bam -o mapping/assigned_sorted.bam
+/usr/bin/time -v -o -a time.txt samtools sort mapping/Aligned.sortedByCoord.out.bam.featureCounts.bam -o mapping/assigned_sorted.bam
 exit_code_function "samtools sort"
 
-samtools index mapping/assigned_sorted.bam 
+/usr/bin/time -v -o -a time.txt samtools index mapping/assigned_sorted.bam 
 exit_code_function "samtools index"
 
-umi_tools count \
+/usr/bin/time -v -o -a time.txt umi_tools count \
 	--per-gene \
 	--gene-tag=XT \
 	--assigned-status-tag=XS \
