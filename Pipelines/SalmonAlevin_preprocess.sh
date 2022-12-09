@@ -27,6 +27,7 @@ merge_files $data
 		-i $index \
 		-p 4 \
 		-o output \
-		--tgMap $t2g
+		--tgMap $t2g \
+		--expectCells 12000 # Cells found by tabula muris preprocess
 
 exit_code_function "salmon alevin"
