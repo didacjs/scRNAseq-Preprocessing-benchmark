@@ -28,11 +28,12 @@ Indicate the preprocessing tool used, the species, and the path to the files.
 
 ```{r}
 projectname<-"Prototype"
-tool<-"KallistoBustools" # "KallistoBustools", "UmiTools or "SalmonAlevin
-matrixpath<-"/home/student/Work/Runs/try/output/counts_unfiltered/cells_x_genes.mtx"
+tool<-"SalmonAlevin"#  "KallistoBustools", "UmiTools or "SalmonAlevin
+matrixpath<-"/home/student/Work/Runs/SA/output/alevin/quants_mat.gz"
 featurespath<-"/home/student/Work/Runs/try/output/counts_unfiltered/cells_x_genes.genes.txt" #Only for KB
 cellspath<-"/home/student/Work/Runs/try/output/counts_unfiltered/cells_x_genes.barcodes.txt" #Only for KB
-MT_genespath<-"~/Work/Refs/Mouse/MTgenes"
+MT_genespath<-"/home/student/Work/Code/scRNAseq-Preprocessing-benchmark/Refs/MTgenes.csv"
+rRNA<- "/home/student/Work/Code/scRNAseq-Preprocessing-benchmark/Refs/rRNA.csv"
 ```
 
 ### Load raw files into counts matrix
@@ -75,17 +76,19 @@ if (tool == "UmiTools"){
 
 ### Tag mitochondrial genes
 
-Mitochondrial genes must have a tag on their name so that we can use the proportion of mitochondrial transcripts as a quality control measure. This is better done before the construction of the `Seurat` object. For this we will use a list of all mitochondrial genes (species dependent!) previously acquired. 
+Mitochondrial genes must have a tag on their name so that we can use the proportion of mitochondrial transcripts as a quality control measure. This is better done before the construction of the `Seurat` object. For this, we will use a list of all mitochondrial genes (species dependent!) previously acquired. In the same manner we compute the proportion of ribosomal genes which we will use to regress it out of our dataset. Last, in the tabula muris study, the proportion of gene Rn45s is also computed to regress it out. We will compute the proportion of Rn18s which is a fragment of Rn45s to emulate their work.
+
 
 ```{r}
-#List of the names of our genes
-gene_names<-data.frame(ens=rownames(counts))
-
-# List generated Using Biomart from Ensembl to  create a list of ENS genes corresponding to mitochondrial genes 
-MT_genes<-data.frame(MT=read_csv(MT_genespath, show_col_types = FALSE))
+gene_names<-data.frame(ens=rownames(counts)) #List of the names of our genes
+# Lists generated Using Biomart from Ensembl to  create a list of ENS genes corresponding to mitochondrial genes 
+MT_genes<-data.frame(MT=read_csv(MT_genespath, show_col_types = FALSE)) 
+rRNA<-data.frame(rNA=read_csv(rRNA, show_col_types = FALSE))
 
 # Loop through all gene names and tag those found in the list
 MT_count <-0
+Rib_count <-0
+Rn18s_count <- 0
 for (i in 1:length(gene_names$ens)){
   if (gene_names$ens[i] %in% MT_genes$ensembl_gene_id){
     MT_count<-MT_count+1 # To check if it works
@@ -93,13 +96,27 @@ for (i in 1:length(gene_names$ens)){
   }
 }
 
-# Change row names of counts matrix 
-row.names(counts)<-gene_names$ens
+for (i in 1:length(gene_names$ens)){
+    if (gene_names$ens[i] == "ENSMUSG00000119584"){
+      Rn18s_count<-Rn18s_count+1 # To check if it works
+      gene_names$ens[i] <- paste(c("Rn18s-",gene_names$ens[i]),sep="",collapse = "")
+    }
+}
+
+for (i in 1:length(gene_names$ens)){
+    if (gene_names$ens[i] %in% rRNA$ensembl_gene_id){
+      Rib_count<-Rib_count+1 # To check if it works
+      gene_names$ens[i] <- paste(c("rib-",gene_names$ens[i]),sep="",collapse = "")
+    }
+}
+
+
+
+row.names(counts)<-gene_names$ens # Change row names of counts matrix 
 
 # Remove non useful objects
 #rm(gene_names,MT_genes,MT_count)
 ```
-
 
 ### Generate Seurat object
 
@@ -109,7 +126,7 @@ Finally we create the 'Seurat' object which we will use to proceed with the anal
 seurat.obj <- CreateSeuratObject(counts = counts, 
                                  project = "projectname", 
                                  min.cells = 5, 
-                                 min.features = 500)
+                                 min.features = 5)
 ```
 
 ## Quality Control
@@ -121,12 +138,14 @@ First we compute the percentage of mitochondrial transcripts for each cell, to u
 ```{r}
 # We use the label we added earlier and add the percentage as a column in the metadata of each cell
 seurat.obj[["percent.mt"]]<-PercentageFeatureSet(seurat.obj,pattern = "MT")
+seurat.obj[["percent.rib"]]<-PercentageFeatureSet(seurat.obj,pattern = "rib")
+seurat.obj[["percent.Rn18s"]]<-PercentageFeatureSet(seurat.obj,pattern = "Rn18s")
 ```
 
 We then plot the three metadata values: Mitochondrial percentage, number of molecules and number of features. A good dataset should have linear relationship between number of features and number of molecules, though a plateau is fine. As for the violin plot, we will use it to set the limits for our filtering.
 
 ```{r}
-VlnPlot(seurat.obj, features = c("nCount_RNA","nFeature_RNA","percent.mt"), ncol = 3)
+VlnPlot(seurat.obj, features = c("nCount_RNA", "nFeature_RNA","percent.mt", "percent.rib", "percent.Rn18s"), ncol = 5)
 FeatureScatter(seurat.obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")+geom_smooth(method='lm')
 ```
 
@@ -141,14 +160,14 @@ These filters depend on each dataset and should be changed on each execution.
 
 ```{r}
 # The parameters used for TabulaMuris
-seurat.obj <- subset(seurat.obj,
-                     subset=nFeature_RNA >500 &nCount_RNA > 1000)
+seurat.obj <- subset(x = seurat.obj, subset=nFeature_RNA >500 & nFeature_RNA < 25000 &
+                                nCount_RNA > 1000 & nCount_RNA < 5000000)
 ```
 
 We make the violin plots again to check the filtering:
 
 ```{r}
-VlnPlot(seurat.obj, features = c("nCount_RNA","nFeature_RNA","percent.mt"), ncol = 3)
+VlnPlot(seurat.obj, features = c("nCount_RNA", "nFeature_RNA","percent.mt", "percent.rib", "percent.Rn18s"), ncol = 5)
 FeatureScatter(seurat.obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")+geom_smooth(method='lm')
 ```
 
@@ -164,17 +183,7 @@ M=10⁴
 $$
 
 ```{r}
-seurat.obj<-NormalizeData(object=seurat.obj, scale.factor = 10000)
-```
-### Scale data
-
-We run `ScaleData()` to shift the expression of each gene, so that the mean expression across cells is 0 and scales the expression of each gene, so that the variance across cells is 1. This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate and is a required step prior to dimensional reduction techniques.
-
-$$X{ij}=(N_{ij}-\mu_i)/\sigma_i$$
-
-```{r}
-gene_names <- rownames(seurat.obj)
-seurat.obj <- ScaleData(seurat.obj, features = gene_names)
+seurat.obj<-NormalizeData(object=seurat.obj)
 ```
 
 ### Highly variable features
@@ -188,11 +197,20 @@ $$
 Following Tabula muris approach, we keep those genes with $d_i>0.5$ and $log(m_i)>0.1$
 
 ```{r}
-seurat.obj <- FindVariableFeatures(object = seurat.obj,
-x.high.cutoff = Inf, y.cutoff = 0.5, x.low.cutoff = 0.1)
+seurat.obj <- FindVariableFeatures(object = seurat.obj,  mean.cutoff = c(0.5, Inf),
+  dispersion.cutoff = c(0.1, Inf),)
 ```
 
+### Scale data
 
+We run `ScaleData()` to shift the expression of each gene, so that the mean expression across cells is 0 and scales the expression of each gene, so that the variance across cells is 1. This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate and is a required step prior to dimensional reduction techniques.
+
+$$X{ij}=(N_{ij}-\mu_i)/\sigma_i$$
+
+```{r}
+gene_names <- rownames(seurat.obj)
+seurat.obj <- ScaleData(seurat.obj, vars.to.regress = c("nCount_RNA",  "percent.rib", "percent.Rn18s"))
+```
 
 ## Dimension reduction
 
@@ -202,6 +220,7 @@ We run the analysis with `RunPCA()`.
 
 ```{r}
 seurat.obj <- RunPCA(seurat.obj, features =VariableFeatures(seurat.obj))
+seurat.obj <- ProjectDim(seurat.obj)
 ```
 
 We make an elbow plot. We want to keep enough PC's to capture most of the variation
