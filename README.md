@@ -17,13 +17,21 @@ I have completed all the pipelines, and I am running them with the trachea fastq
 ## Remaining tasks
 
 * Bug fix and clean pipelines.
+
 * Add scripts to generate accessory files to the git repository.
+
 * Add description on how to obtain Tabula Muris raw data (relatively easy, using a specific 10X tool, but for completion and reproducibility).
+
 * Decide on which metrics to compare the benchmark results (currently the pipelines produce a file from the bash time utility).
+
 * Decide on which metrics to compare the downstream results.
+
 * Produce code to present the comparisons.
+
 * Analyze data from other tissues.
+
 * Clean the notebook and improve the quality of the report.
+
 * Extend this readme.
 
 # Workflow and usage of the repository
@@ -31,6 +39,8 @@ I have completed all the pipelines, and I am running them with the trachea fastq
 ## Preprocessing
 
 The pipelines inside the pipeline folder take as input the paths of the "module.sh" file, of the raw data directory and of the mapping index, specific to each tool. Aditionally, a transcripts to genes file and/or tech-specific whitelist from 10X can be required, as well as other parameters. These inputs should be provided by directly editing the scripts. When the script is ready to run, do so in a terminal inside the directory where you want the output.
+
+## Downstream
 
 After the preprocessing is done, input the path of the three output files into the corresponding chunk in the notebook. In another chunk, the parameters used for the analysis can be specified. The defaults are the parameters used for the 8_15 trachea dataset from Tabula Muris. After this, the notebook can be knited to produce a report or run chunk by chunk.
 
