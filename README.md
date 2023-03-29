@@ -38,8 +38,6 @@ I have completed all the pipelines, and I am running them with the trachea fastq
 
 * Decide on which metrics to compare the benchmark results (currently the pipelines produce a file from the bash time utility).
 
-* Decide on which metrics to compare the downstream results.
-
 * Analyze data from other tissues.
 
 * Clean the notebook and improve the quality of the report.
