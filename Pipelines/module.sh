@@ -44,23 +44,23 @@ merge_files (){
 			exit
 		fi
 
-	# If more than 4 files are present at $data, R1 and R2 could be in separate lanes  
+	# If more than 4 files are present at $$2, R1 and R2 could be in separate lanes  
 	else
 		# Perhaps the lanes were merged in a previous run?
-		if test -f data/READY_"$setname"_R1.fastq.gz
+		if test -f $2/READY_"$setname"_R1.fastq.gz
 		then
 			echo "Lanes already merged"
-			R1=data/READY_"$setname"_R1.fastq.gz
-			R2=data/READY_"$setname"_R2.fastq.gz
+			R1=$2/READY_"$setname"_R1.fastq.gz
+			R2=$2/READY_"$setname"_R2.fastq.gz
 		else
 			echo "Merging lanes"
-			mkdir -p data
-			cat $1/"$setname"*_R1_*.fastq.gz > data/READY_"$setname"_R1.fastq.gz
+			mkdir -p $2
+			cat $1/"$setname"*_R1_*.fastq.gz > $2/READY_"$setname"_R1.fastq.gz
 			exit_code_function "cat R1"
-			R1=data/READY_"$setname"_R1.fastq.gz
-			cat $1/"$setname"*_R2_*.fastq.gz > data/READY_"$setname"_R2.fastq.gz
+			R1=$2/READY_"$setname"_R1.fastq.gz
+			cat $1/"$setname"*_R2_*.fastq.gz > $2/READY_"$setname"_R2.fastq.gz
 			exit_code_function "cat R1"
-			R2=data/READY_"$setname"_R2.fastq.gz
+			R2=$2/READY_"$setname"_R2.fastq.gz
 			echo "Lanes merged" 
 		fi
 	fi
