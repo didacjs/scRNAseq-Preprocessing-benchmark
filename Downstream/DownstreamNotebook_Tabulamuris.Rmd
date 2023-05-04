@@ -14,88 +14,131 @@ knitr::opts_chunk$set(echo = TRUE, cache = TRUE, cache.lazy = FALSE)
 
 The purpose of this notebook is to analyze the already preprocessed data provided by Tabula Muris as `.robj` and obtain:
 
-* The t-SNE cluster image
-* A table with the top 10 diferentially expressed genes of each cluster
+* Number of cells, genes and molecules, before and after filtering.
+* A graphic of the clusters on a t-SNE dimensionality reduction image.
+* A file detailing the top 10 differentially expressed genes of each cluster.
+* A file detailing the cluster of each cell.
 
-We can then use these results to compare them with those obtained with the scRNA-seq data that we preprocessed.
+I can then use these results to compare them with those obtained with the scRNA-seq count matrix obtained from the data I preprocessed.
 
 ## Preparation and setup
 
 ### Libraries
 
-Load libraries used in this notebook., indicate the preprocessing tool used, the species, and the path to the files.
+Load libraries used in this notebook. `Seurat` provides most of the needed functions to analyze scRNAseq data, `dplyr` is very useful for table manipulation at the end of the file, helps with the plots.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 library(Seurat, quietly = TRUE)
 library(dplyr, quietly = T)
+library(ggplot2, quietly = T)
 ```
 
-### Set parameters
+### Point to files and directories
 
-Indicate the path to the `extid2description.csv` file. It was obtained through Biomart and is available in the github.
+Before I start with the analysis I save the path where I want to save the result files listed above. I also save to a variable the path to the `extid2description.csv` file, which is relevant later. To reproduce the results *set the working directory to the repository* and the *knit directory to the working directory* and nothing from this chunk needs to be changed.
 
 ```{r}
-extid2descriptionpath<-"~/Work/Code/scRNAseq-Preprocessing-benchmark/Refs/extid2description.csv"
+extid2descriptionpath <- "./Refs/extid2description.csv"
+output_path <- "./Refs/"
 ```
 
-Indicate the path to the `.robj`. These are available in the Tabula Muris website and provide the counts matrix as well as other data in an expressionSet-like object from the `Seurat` package. However, the objects are from an outdated version of the library (V2) so we need to update it to ours.
+### Load .robj into seurat object
+
+Another preparatory step is to load the Tabula Muris data, provided as `.robj`. *To reproduce the results it is necessary to indicate the path to the `.robj` as it is not provided in the repository*. These files [are available in the Tabula Muris website](https://figshare.com/articles/dataset/Robject_files_for_tissues_processed_by_Seurat/5821263) and provide the counts matrix as well as other data in an expressionSet-like object from the `Seurat` package. However, the objects are from an outdated version of the library (V2) so it has to be updated (to V3).
+
+Together with loading the object *it is also important to detail which set of cells we want to analyze*. Tabula muris provides the processed data from all cells from a given tissue in the same file, but more than one set of cells from the same tissue were studied and the raw data is provided separately. To find out which datasets are present in the object, run the next chunk and afterwards `unique(seurat.obj$channel)` and then type it in "dataset" with a "_" afterwards.
 
 ```{r}
+dataset <- "10X_P8_15_"
 load("~/Work/Datasets/Mouse/Robjects/droplet_Trachea_seurat_tiss.Robj")
 seurat.obj <- UpdateSeuratObject(tiss)
 rm(tiss)
 ```
 
-
-Other parameters to be used:
+In the next chunk only the cells in the dataset of interest are kept.
 
 ```{r}
-# nFeature_threshold <- c(500, 25000) # subset. Minimum and maximum number of features detected in a cell to be kept
-# nCount_threshold <- c(1000, 500000)  # subset. Minimum and maximum number of molecules detected in a cell to be kept
-dispersion.cutoff <- c(0.1, Inf) # FindVariableFeatures: Threshold of log dispersion
-mean.cutoff <- c(0.5, Inf) # FindVariableFeatures: Threshold of log mean expression
-n.pcs <- 6 # Number of principal components used for clustering. This hsould actually be chosen through the elbow plot
-resolution <- 0.1 # Resolution used in linear cluster
-perplexity <- 15 # Perplexity for t-SNE 
+seurat.obj <- seurat.obj[,grep(dataset, colnames(seurat.obj))]
 ```
 
 ## Quality Control
 
 ### Data exploration
 
-We then plot the three metadata values: Mitochondrial percentage, number of molecules and number of features. A good dataset should have linear relationship between number of features and number of molecules, though a plateau is fine. As for the violin plot, we will use it to set the limits for our filtering.
+The first step of the downstream analysis is the quality control, which consists in manually filtering cells above or under some threshholds. Before filtering, however, I check how many cells, genes and molecules are present in the dataset which are relevant metrics for preprocessing. It is important to note that the datasets provided by TabulaMuris are already filtered even though I will filter them further
+
+```{r}
+sum(seurat.obj$nCount_RNA)
+length(colnames(seurat.obj))
+length(rownames(seurat.obj))
+```
+This Tabula Muris dataset has a total of `r length(rownames(seurat.obj))` genes expressed across `r length(colnames(seurat.obj))` cells, totalling `r sum(seurat.obj$nCount_RNA)` RNA molecules.
+
+I then plot the three metadata values: Mitochondrial percentage, number of molecules and number of features. A good dataset should have linear relationship between number of features and number of molecules, though a plateau is fine. As for the violin plot, we will use it to set the limits for our filtering.
 
 ```{r}
 VlnPlot(seurat.obj, features = c("nCount_RNA", "nFeature_RNA","percent.ribo"), ncol = 3)
 FeatureScatter(seurat.obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")+geom_smooth(method='lm')
 ```
 
+The data is separated into clusters previously computed by Tabula Muris but I will make the clusterization afterwards as well to have control over the process.
+
 ### Filtering
 
-We filter the cells by setting a limit on:
+To filter the cells I set a limit visually, looking at the violin plots, on:
+
 *Mitochondrial percentage: An upper limit, high values may indicate a broken nucleus, thus a compromised cell. For this notebook this is currently a work in progress.
 *Number of molecules: An upper limit, very high values may indicate the droplet contained two cells
-*Number of features: A lower limit, droplets with too few features may only contein environmental RNA
+*Number of features: A lower limit, droplets with too few features may only contain environmental RNA
 
-These filters depend on each dataset and should be changed on each execution.
-
-```{r}
-seurat.obj.filtered <- subset(x = seurat.obj, subset=nFeature_RNA > 500 & nFeature_RNA < 3000 &
-                                nCount_RNA > 1000 & nCount_RNA < 10000)
-```
-
-We make the violin plots again to check the filtering:
+*These filters depend on each dataset and should be changed on each execution.* Set the lower and upper limits manually.
 
 ```{r}
-VlnPlot(seurat.obj.filtered, features = c("nCount_RNA", "nFeature_RNA", "percent.ribo"), ncol = 3)
-FeatureScatter(seurat.obj.filtered, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")+geom_smooth(method='lm')
+nCount_threshold <- c(500, 10000)  # subset. Minimum and maximum number of molecules detected in a cell to be kept
+nFeature_threshold <- c(300, 2200) # subset. Minimum and maximum number of features detected in a cell to be kept
+percent.ribo_threshold <-5 # subset. Maximum percentage of mitocondrial molecules
 ```
 
-## Notmalization and scaling
+To apply the filters `Seurat` provides a method for the `subset` function, and I save it in a different object so that I can run the chunks above again to compare and fine tune the filters. 
+
+```{r}
+seurat.obj.filtered <-
+  subset(
+    x = seurat.obj,
+    subset = nFeature_RNA > nFeature_threshold[1] &
+      nFeature_RNA <  nFeature_threshold[2] &
+      nCount_RNA >  nCount_threshold[1] &
+      nCount_RNA < nCount_threshold[2] &
+      percent.ribo < percent.ribo_threshold
+  )
+```
+
+Next I show the plots again to check the filtering:
+
+```{r}
+VlnPlot(
+  seurat.obj.filtered,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.ribo"),
+  ncol = 3
+)
+FeatureScatter(seurat.obj.filtered,
+               feature1 = "nCount_RNA",
+               feature2 = "nFeature_RNA") + geom_smooth(method = 'lm')
+```
+
+```{r}
+sum(seurat.obj.filtered$nCount_RNA)
+length(colnames(seurat.obj.filtered))
+length(rownames(seurat.obj.filtered))
+```
+
+After filtering we keep a total of `r length(rownames(seurat.obj.filtered))` genes expressed across `r length(colnames(seurat.obj.filtered))` cells, totalling `r sum(seurat.obj.filtered$nCount_RNA)` RNA molecules.
+
+## Normalization, feature selection and scaling
 
 ### Normalization
 
-Normalize the values so we can make comparisons across cells. Each value is divided by the total expression in its cell, multiplied by a scale factor and then log transformed.
+To start this section I apply normalization to the expression values cells can be compared. Each value is divided by the total expression in its cell, multiplied by a scale factor and then log transformed.
 
 $$
 N_{ij}=log(1+M\frac{A_{ij}}{\sum_{j'}A_{ij'}}) \\
@@ -108,128 +151,168 @@ seurat.obj.filtered<-NormalizeData(object=seurat.obj.filtered)
 
 ### Highly variable features
 
-We do this to focus our analysis on the genes that differentiate our cells. We select the genes with high standarized log dispersion. The log dispersion $d$ of a gene $i$ with mean and variance standarized expresion $v_i,m_i$ is simply:
+Next, I select the genes with high standarized log dispersion. The log dispersion $d$ of a gene $i$ with mean and variance standarized expresion $v_i,m_i$ is simply:
 
 $$
 d_i = log(v_i/m_i)
 $$
-
-Following Tabula muris approach, we keep those genes with $d_i>0.5$ and $log(m_i)>0.1$
+The purpose is to focus the analysis on the genes that differentiate the cells. Following Tabula muris approach, we keep those genes with $d_i>0.5$ and $log(m_i)>0.1$
 
 ```{r}
-seurat.obj.filtered <- FindVariableFeatures(object = seurat.obj.filtered,  mean.cutoff = mean.cutoff,
-  dispersion.cutoff = dispersion.cutoff)
+seurat.obj.filtered <-
+  FindVariableFeatures(
+    object = seurat.obj.filtered,
+    mean.cutoff = c(0.5, Inf),
+    dispersion.cutoff = c(0.1, Inf)
+  )
 ```
 
 ### Scale data
 
-We run `ScaleData()` to shift the expression of each gene, so that the mean expression across cells is 0 and scales the expression of each gene, so that the variance across cells is 1. This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate and is a required step prior to dimensional reduction techniques.
+Through `ScaleData()` I shift the expression of each gene, so that the mean expression across cells is 0 and scales the expression of each gene, so that the variance across cells is 1. This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate and is a required step prior to dimensional reduction techniques.
 
 $$X{ij}=(N_{ij}-\mu_i)/\sigma_i$$
 
 ```{r}
-gene_names <- rownames(seurat.obj.filtered)
-seurat.obj.filtered <- ScaleData(seurat.obj.filtered, vars.to.regress = c("nCount_RNA",  "percent.ribo"))
+seurat.obj.filtered <-
+  ScaleData(seurat.obj.filtered,
+            vars.to.regress = c("nCount_RNA",  "percent.ribo"))
 ```
 
 ## Dimension reduction
 
 ### Principal Component Analysis
 
-We run the analysis with `RunPCA()`. 
+I run the analysis with `RunPCA()` over the selected most variable genes and then project the dimensional reduction (with `ProjectDim`) onto the entire dataset so that all genes have loadings.
 
 ```{r message=FALSE}
-seurat.obj.filtered <- RunPCA(seurat.obj.filtered, features =VariableFeatures(seurat.obj.filtered), ndims.print = 1)
-seurat.obj.filtered <- ProjectDim(seurat.obj.filtered)
+seurat.obj.filtered <-
+  RunPCA(
+    seurat.obj.filtered,
+    features = VariableFeatures(seurat.obj.filtered),
+    ndims.print = 1
+  )
+seurat.obj.filtered <- ProjectDim(seurat.obj.filtered, verbose = F)
 ```
 
-We make an elbow plot. We want to keep enough PC's to capture most of the variation
+After PCA, to keep enough PC's to capture most of the variation I check the standard deviation of each PC and I keep those before the Elbow that appears in the plot. The PC kept will be used for clustering and t-SNE.
 
 ```{r}
 ElbowPlot(seurat.obj.filtered)
 ```
 
-From this plot we should choose the number of principal components to use in clustering.
-
-### Clustering
-
-Here we specify how many PCA's to use and the resolutions for the cluster. We then plot the cells by their two first principal components.
+*Chose in the next chunk the number of PC to be kept*
 
 ```{r}
-seurat.obj.filtered <- FindNeighbors(seurat.obj.filtered,dims = 1:n.pcs)
-seurat.obj.filtered <- FindClusters(seurat.obj.filtered, resolution = resolution)
-DimPlot(seurat.obj.filtered , dims = c(1,2), reduction = "pca", label = TRUE)
+n.pcs <- 6
 ```
 
-More useful, as it is the type of cluster graphic is the _t-distributed stochastic neighbor embedding_, which is a dimensionality reduction method that discriminates clusters really well. First, the probability proportional to similarity is calculated for each pair. For data point $x_{j}$ to data point $x_{i}$ this is the conditional probability, $p_{j|i}}$, that $x_{i}$ would pick $x_{j}$ as its neighbor if neighbors were picked in proportion to their probability density under a student t centered at $x_{i}$. Then a distribution in the lower space is computed iteratively (through gradient descent) to minimize the Kullback–Leibler divergence between it and the full dimensional distribution.
+### Shared Nearest Neighbor Clustering
 
-For our application, we will use Seurat's `RunTSNE`. It does not work directly on the genes as dimensions as t-SNE struggles with too many dimensions. It uses the principal components computed above, sins PC are good at separating signal from noise. We need to choose a parameter named perplexity that roughly sets how much impact closer points have over points further apart.
+To obtain the cluster, first, I compute the 30 nearest neighbors according in the dimensional space set by the selected PC with `FindNeighbours`. Then the clusters are identified through shared nearest neighbors with `FindClusters` and finally ploted through `DimPlot`.
 
 ```{r}
-seurat.obj.filtered <- RunTSNE(seurat.obj.filtered, dims.use = 1:n.pcs, seed.use = 10, perplexity = perplexity, dim.embed = 2)
+seurat.obj.filtered <-
+  FindNeighbors(seurat.obj.filtered,
+                dims = 1:n.pcs,
+                k.param = 30)
+
+seurat.obj.filtered <-
+  FindClusters(
+    seurat.obj.filtered,
+    resolution = 0.1,
+    random.seed = 42,
+    n.start = 20,
+    n.iter = 20
+  )
+DimPlot(
+  seurat.obj.filtered ,
+  dims = c(1, 2),
+  reduction = "pca",
+  label = TRUE
+)
+```
+
+### t-Distributed Stochastic Neighbor Embedding dimensional reduction
+
+Afterwards I compute the _t-distributed stochastic neighbor embedding_ (t-SNE) parameters. t-SNE is a dimensional reduction method that discriminates clusters really well. First, the probability proportional to similarity is calculated for each pair. For data point $x_{j}$ to data point $x_{i}$ this is the conditional probability, $p_{j|i}}$, that $x_{i}$ would pick $x_{j}$ as its neighbor if neighbors were picked in proportion to their probability density under a student t centered at $x_{i}$. Then a distribution in the lower space is computed iteratively (through gradient descent) to minimize the Kullback–Leibler divergence between it and the full dimensional distribution.
+
+For our application, we will use Seurat's `RunTSNE`. It does not work directly on the genes as dimensions as t-SNE struggles with too many dimensions. It uses the principal components computed above, since PC are good at separating signal from noise. We need to choose a parameter named perplexity that roughly sets how much impact closer points have over points further apart.
+
+```{r}
+seurat.obj.filtered <-
+  RunTSNE(
+    seurat.obj.filtered,
+    dims.use = 1:n.pcs,
+    seed.use = 42,
+    perplexity = 15,
+    dim.embed = 2
+  )
 TSNEPlot(seurat.obj.filtered)
 ```
 
-We obtain the differentially expressed genes for each cluster with the function `FindAllMarkers`. This provides a table with the gene id, the cluster in which it is differentially expressed, both p-values (normal and adjusted, and only those under `return.thresh`) and the log fold change (more on it below).
+## Differential expression
+
+The differential expression analysis can be performed with `FindAllMarkers`. This function provides a table detailing the marker genes of each cluster. Including its id, the cluster in which it is differentially expressed, the difference in expression and the metric used to find the markers. The metric used is the area under the curve (AUC). To compute it, the function builds a classifier for each combination of gene and cluster, with that gene as the only classifier and a with the cluster and the rest of cells as the two classes. To evaluate the classifier, `FindAllMarkers` returns the area under the receiver operating characteristic (ROC), which is the true positive rate against the false positive rate. Essentially measures how well the gene discriminates between the cells of cluster and the rest of cells. An AUC value of 1 means that expression values for this gene alone can perfectly classify the two groupings: _Each of the cells in the evaluated cluster exhibit a higher level of the evaluated gene than in the cells of the rest of clusters_. An AUC value of 0 also means there is perfect classification, which means that lesser expression predicts that the cell belong to the cluster. However, we will only evaluate genes that are more expressed than the average in the cluster, as we want to find marker genes and not build a classifier.
+
+We will keep only the top 2% genes by AUC and to speed up the process we will only test genes that are detected at minimum in 10% of cells.
 
 ```{r}
-markers <- FindAllMarkers(object = seurat.obj.filtered, only.pos = TRUE, min.pct = 0.25, return.thresh = 0.01)
+markers <-
+  FindAllMarkers(
+    object = seurat.obj.filtered,
+    test.use = "roc",
+    only.pos = TRUE,
+    min.pct = 0.1,
+    return.thresh = 0.02
+  )
 rownames(markers) <- c()
 ```
 
-We read the description to add it to the previous table. And we display the 5 top markers for each gene, sorted by a metric provided by `FindAllMarkers` labeled as `log2FC`. The base 2 logarithm of the fold change tells us how much more expressed a gene is in a cluster of cells relative to the whole set of cells. The log2FC is:
-
-$$log2FC=log_2(\frac{Average\ expression\ in\ set\ 1}{Average\ expression\ in\ set\ 2})$$
-
-Where set 1 would be a given cluster and set 2 the whole set. However, the actual calculation in the function is:
-
-```
-data.1 <- apply(X = data.use[genes.use, cells.1, drop = F], MARGIN = 1, FUN = function(x) log(x = mean(x = expm1(x = x)) + pseudocount.use))
-data.2 <- apply(X = data.use[genes.use, cells.2, drop = F], MARGIN = 1, FUN = function(x) log(x = mean(x = expm1(x = x)) + pseudocount.use))
-total.diff <- (data.1 - data.2)
-```
-
-Which has 2 caveats:
-
-* `pseudocount.use` is used because scRNA-Seq count marices are sparse and thus we add 1 to every gene for the calculation to avoid $log(0)$
-* `expm1` is used instead of the base 2 logarithm. This function returns the natural logarithm minus one.
+Next chunk shows the top 5 genes of each cluster for report completion through some table manipulation. We add the description of each gene through a file previously obtained from Biomart which is available in the github.
 
 ```{r message=FALSE}
-externalid2description<-read.csv(extid2descriptionpath)
+externalid2description <- read.csv(extid2descriptionpath)
 anotated_table <- data.frame()
-for(i in unique(markers$cluster)){
-  markers %>% 
-    dplyr::select(gene, p_val_adj, avg_log2FC, cluster) %>% 
-    filter(cluster ==i) %>%
-    top_n(5, avg_log2FC) %>%
-    left_join(externalid2description, by = "gene") %>%
-    dplyr::select(gene, p_val_adj, avg_log2FC, cluster, description) ->
-    cluster
-    anotated_table <- rbind(anotated_table, cluster)
+for (i in unique(markers$cluster)) {
+  markers %>%
+    dplyr::select(gene, cluster, myAUC, avg_log2FC) %>%
+    filter(cluster == i) %>%
+    top_n(10, myAUC) %>%
+    left_join(externalid2description, by = "gene") -> cluster
+  anotated_table <- rbind(anotated_table, cluster)
 }
 
 knitr::kable(anotated_table)
 ```
 
-Lastly, we compute the same table but with more markers and we save it to a file. We will use it to compare this table, obtained from already preprocessed scRNA-Seq data, to the same table obtained with data preprocessed by the pipelines.
+## Save files for comparisons
+
+I save the same table above, but with more markers, to a file. I will use it to compare this table, obtained from already preprocessed scRNA-Seq data, to the same table obtained with data preprocessed by the pipelines.
 
 ```{r}
 anotated_table <- data.frame()
-for(i in unique(markers$cluster)){
-  markers %>% 
-    dplyr::select(gene, p_val_adj, avg_log2FC, cluster) %>% 
-    filter(cluster ==i) %>%
-    top_n(10, avg_log2FC) %>%
-    left_join(externalid2description, by = "gene") %>%
-    dplyr::select(gene, p_val_adj, avg_log2FC, cluster, description) ->
-    cluster
-    anotated_table <- rbind(anotated_table, cluster)
+for (i in unique(markers$cluster)) {
+  markers %>%
+    dplyr::select(gene, cluster, myAUC, avg_log2FC) %>%
+    filter(cluster == i) %>%
+    top_n(10, myAUC) %>%
+    left_join(externalid2description, by = "gene") -> cluster
+  anotated_table <- rbind(anotated_table, cluster)
 }
-
-write_csv(anotated_table, "~/Work/Code/scRNAseq-Preprocessing-benchmark/Refs/anotated_table_P8_15.csv")
+write.csv(anotated_table,
+          paste(output_path, dataset, "anotatedTable.csv", sep = ""))
 ```
 
+Lastly, I want to compare directly how many cells are in the same cluster both from Tabula Muris data and from our data. For that, I save a .csv with the cluster of each barcode.
 
+```{r}
+idents_TM <- as.data.frame(seurat.obj.filtered$cluster.ids)
+idents_TM <- as.data.frame(cbind(rownames(idents_TM),idents_TM$`seurat.obj.filtered$cluster.ids`))
+names(idents_TM)=c("CellBarcodes", "Cluster")
+idents_TM[,1] <- substring(idents_TM[,1],11)
+write.csv(idents_TM, paste(output_path, dataset, "idents.csv",sep = ""), row.names = F)
+```
 
 
 
