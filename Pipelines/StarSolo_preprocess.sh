@@ -90,11 +90,11 @@ R2=$output/data/READY_"$setname"_R2.fastq
 exit_code_function "gunzip"
 
 # Run STAR with --soloType set to CB_UMI_Simple
-STAR --genomeDir $index \
+/usr/bin/time -v -a -o $output/time.txt STAR --genomeDir $index \
      --readFilesIn $R2 $R1 \
      --soloType CB_UMI_Simple \
      --soloCBwhitelist  $whitelist \
-     --outFileNamePrefix $output/
+     --outFileNamePrefix $output/ \
      --runThreadN 6
 
 # Exit code

@@ -1,8 +1,8 @@
 ---
 title: "Downstream Analysis Notebook"
-subtitle: "Kallisto Bustools P8_15 trachea"
+subtitle: "StarSolo P7_8 lung"
 author: "Dídac Jiménez"
-date: "26-03-2023"
+date: "21-05-2023"
 output: html_document
 ---
 
@@ -37,16 +37,16 @@ Indicate the preprocessing tool used, and a name for the project. The preporcess
 ```{r}
 # General variables
 projectname<-"Prototype"
-tool<-"KallistoBustools"#  "KallistoBustools", "UmiTools or "SalmonAlevin"
+tool<-"UmiTools"#  "KallistoBustools", "StarSolo", UmiTools or "SalmonAlevin"
 ```
 
 Next chunk saves the path to the count matrix, the list of genes and the list of cells. *This is not provided in the github* so files need to be provided to reproduce results. 
 
 ```{r}
 # Dataset location
-matrixpath<-"~/Work/Runs/newyear/output/counts_unfiltered/cells_x_genes.mtx"
-featurespath<-"~/Work/Runs/newyear/output/counts_unfiltered/cells_x_genes.genes.txt" #Only for KB
-cellspath<-"~/Work/Runs/newyear/output/counts_unfiltered/cells_x_genes.barcodes.txt" #Only for KB
+matrixpath<-"~/Work/TFM/Runs/UT_2505_78/counts.tsv.gz"
+featurespath<-"/media/student/Storage/Runs/KB_2205_78/Counts/counts_unfiltered/cells_x_genes.genes.txt" #Only for KB and StarSolo
+cellspath<-"/media/student/Storage/Runs/KB_2205_78/Counts/counts_unfiltered/cells_x_genes.barcodes.txt"#Only for KB and StarSolo
 ```
 
 Last chunk points to the variety of accessory files needed in the analysis. To reproduce the results *set the working directory to the repository* and the *knit directory to the working directory*, then, for `tabulaMuris_anotatedTable_path` and `clusterIdents_path` choose the anotatedTable.csv and idents.csv files of the same cell dataset.
@@ -56,8 +56,8 @@ Last chunk points to the variety of accessory files needed in the analysis. To r
 MT_genespath<-"./Refs/MTgenes.csv"
 rRNA<- "./Refs/rRNA.csv"
 ensemblid2description_path<-"./Refs/ensemblid2description.csv"
-tabulaMuris_anotatedTable_path<-"./Refs/10X_P8_15_anotatedTable.csv" # Make sure this file is obtained from the data of the same tissue
-clusterIdents_path<-"./Refs/10X_P8_15_idents.csv"
+tabulaMuris_anotatedTable_path<-"./Refs/10X_P7_8_anotatedTable.csv" # Make sure this file is obtained from the data of the same tissue
+clusterIdents_path<-"./Refs/10X_P7_8_idents.csv"
 ```
 
 ### Load raw files into counts matrix
@@ -65,7 +65,7 @@ clusterIdents_path<-"./Refs/10X_P8_15_idents.csv"
 Outputs from each preprocessing tool are different. I will define and use different functions to generate a counts matrix.
 
 ```{r}
-if (tool == "KallistoBustools"){
+if (tool == "KallistoBustools" || tool == "StarSolo"){
   counts<-ReadMtx(
     mtx = matrixpath,
     cells = cellspath,
@@ -76,7 +76,7 @@ if (tool == "KallistoBustools"){
     feature.sep = "\t",
     skip.cell = 0,
     skip.feature = 0,
-    mtx.transpose = TRUE,
+    mtx.transpose = tool == "KallistoBustools",
     unique.features = TRUE,
     strip.suffix = FALSE
 )
@@ -92,15 +92,17 @@ if (tool == "SalmonAlevin"){
 }
 
 if (tool == "UmiTools"){
-  counts <- Read10X(sub("matrix.mtx.gz","",matrixpath), 
+  source("~/Work/TFM/Code/Pipelines/umitools_to_10x.R")
+  umitools_to_mtx(matrixpath, output_path = sub("counts.tsv","",matrixpath))
+  counts <- Read10X(sub("counts.tsv","",matrixpath), 
                   gene.column = 1)
 }
-
 ```
 
 ### Tag mitochondrial genes
 
 Mitochondrial genes must have a tag on their name so that we can use the proportion of mitochondrial transcripts as a quality control measure. This is better done before the construction of the `Seurat` object. For this, I use a list of all mitochondrial genes in mouse previously acquired from biomart.
+
 
 ```{r}
 #List of the names of our genes
@@ -175,8 +177,8 @@ We filter the cells by setting a limit on:
 *These filters depend on each dataset and should be changed on each execution.* Set the lower and upper limits manually.
 
 ```{r}
-nCount_threshold <- c(500, 10000)  # subset. Minimum and maximum number of molecules detected in a cell to be kept
-nFeature_threshold <- c(300, 2100) # subset. Minimum and maximum number of features detected in a cell to be kept
+nCount_threshold <- c(2000, 12000)  # subset. Minimum and maximum number of molecules detected in a cell to be kept
+nFeature_threshold <- c(500, 3700) # subset. Minimum and maximum number of features detected in a cell to be kept
 percent.ribo_threshold <-5 # subset. Maximum percentage of mitocondrial molecules
 ```
 
@@ -286,7 +288,7 @@ ElbowPlot(seurat.obj.filtered)
 *Chose in the next chunk the number of PC to be kept*
 
 ```{r}
-n.pcs <- 7
+n.pcs <- 13
 ```
 
 ### Shared Nearest Neighbor Clustering
@@ -385,7 +387,7 @@ for(i in unique(markers$cluster)){
     anotated_table <- rbind(anotated_table, cluster)
 }
 tabulaMuris_anotatedTable <- read.csv(tabulaMuris_anotatedTable_path)
-anotated_table %>% inner_join(tabulaMuris_anotatedTable, by="description") %>% select(gene.y, description, cluster.x, cluster.y, myAUC.x, avg_log2FC.x) %>% knitr::kable(col.names = c("Gene", "Description", "Cluster of project", "Ground truth cluster", "myAUC", "avg_log2FC"))
+anotated_table %>% inner_join(tabulaMuris_anotatedTable, by="description") %>% dplyr::select(gene.y, description, cluster.x, cluster.y, myAUC.x, avg_log2FC.x) %>% knitr::kable(col.names = c("Gene", "Description", "Cluster of project", "Ground truth cluster", "myAUC", "avg_log2FC"))
 ```
 
 ### Comparing cell identities

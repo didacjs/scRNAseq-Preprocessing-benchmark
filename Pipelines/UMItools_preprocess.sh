@@ -95,7 +95,8 @@ else
 	echo "Running umi_tools whitelist.."
 	/usr/bin/time -v -o $output/time.txt umi_tools whitelist --stdin $R1 \
 							--bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNN \
-							--set-cell-number=5000 \
+							--set-cell-number=6000 \
+							-L $output/extract.log \
 							--log2stderr > $output/whitelist.txt;
 	whitelist=$output/whitelist.txt
 fi
@@ -106,16 +107,18 @@ exit_code_function "umi_tools whitelist"
 if test -f $output/data/EXTRACTED_"$setname"_R1.fastq.gz
 then
 	echo "Barcodes already extracted"
+	R1=$output/data/EXTRACTED_"$setname"_R1.fastq.gz
+	R2=$output/data/EXTRACTED_"$setname"_R2.fastq.gz
 else
 	echo "R1 is $R1"
 	echo "R2 is $R2"
 	echo "Running umi_tools extract.."
 	/usr/bin/time -v -a -o  $output/time.txt umi_tools extract --bc-pattern=CCCCCCCCCCCCCCCCNNNNNNNNNN \
-					-I $R1 \
-					-S $output/data/EXTRACTED_"$setname"_R1.fastq.gz \
+					--stdin $R1 \
+					--stdout $output/data/EXTRACTED_"$setname"_R1.fastq.gz \
 					--read2-in $R2 \
-					--read2-out $output/data/EXTRACTED_"$setname"_R2.fastq.gz \
-					--whitelist $output/whitelist.txt
+					--read2-out=$output/data/EXTRACTED_"$setname"_R2.fastq.gz \
+					--whitelist=$output/whitelist.txt
 	R1=$output/data/EXTRACTED_"$setname"_R1.fastq.gz
 	R2=$output/data/EXTRACTED_"$setname"_R2.fastq.gz
 	
@@ -140,7 +143,7 @@ else
 	echo "Running STAR mapping.."
 	/usr/bin/time -v -a -o $output/time.txt STAR --runThreadN 6 \
 			--genomeDir $index \
-			--readFilesIn $R2 $R1 \
+			--readFilesIn $R2 \
 			--readFilesCommand zcat \
 			--outFilterMultimapNmax 1 \
 			--outSAMtype BAM Unsorted \
@@ -149,33 +152,17 @@ fi
 
 exit_code_function "STAR"
 
-echo "Sorting BAM file"
-
-if test -f $output/mapping/Aligned.Sorted.out.bam
-then
-	echo "BAM file already sorted"
-else
-	/usr/bin/time -v -a -o $output/time.txt samtools sort $output/mapping/Aligned.out.bam -o $output/mapping/Aligned.Sorted.out.bam
-	exit_code_function "samtools sort"
-
-	/usr/bin/time -v -a -o $output/time.txt samtools index $output/mapping/Aligned.Sorted.out.bam 
-	exit_code_function "samtools index"
-fi
-
 # Step 5: Assign reads to genes
 
 echo "Assigning reads to genes"
-if test -f $output/mapping/Aligned.Sorted.out.bam.featureCounts.bam
+if test -f $output/mapping/Aligned.out.bam.featureCounts.bam
 then
 	echo "Reads already assigned"
 else
-	/usr/bin/time -v -a -o $output/time.txt featureCounts -p \
-			--countReadPairs \
-			-R BAM \
-			-T 12 \
+	/usr/bin/time -v -a -o $output/time.txt featureCounts \
 			-a $gtf \
-			-o $output/mapping/gene_assigned.bam \
-			$output/mapping/Aligned.Sorted.out.bam;
+			-o $output/mapping/gene_assigned.bam -R BAM $output/mapping/Aligned.out.bam \
+			-T 12;
 	exit_code_function "featureCounts"
 fi
 
@@ -185,7 +172,7 @@ if test -f $output/mapping/Assigned.Sorted.out.bam
 then
 	echo "BAM file already sorted"
 else
-	/usr/bin/time -v -a -o $output/time.txt samtools sort $output/mapping/Aligned.Sorted.out.bam.featureCounts.bam -o $output/mapping/Assigned.Sorted.out.bam
+	/usr/bin/time -v -a -o $output/time.txt samtools sort $output/mapping/Aligned.out.bam.featureCounts.bam -o $output/mapping/Assigned.Sorted.out.bam
 	exit_code_function "samtools sort"
 
 	/usr/bin/time -v -a -o $output/time.txt samtools index $output/mapping/Assigned.Sorted.out.bam 

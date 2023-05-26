@@ -87,9 +87,11 @@ echo "Setname is $setname"
 # Merge lanes if needed, save merged FASTQs at $output/data
 merge_files $data $output/data
 
+echo $R1
+echo $R2
 # Run kb count
 echo "Starting count.."
-/usr/bin/time -v -o $output/time.txt kb count -i $index -g $t2g -x $tech -o $output/$results $R1 $R2
+/usr/bin/time -v -o $output/time.txt kb count -i $index -g $t2g -x $tech -o $output/Counts $R1 $R2 --cellranger
 
 # Exit code
 exit_code_function "kb count"

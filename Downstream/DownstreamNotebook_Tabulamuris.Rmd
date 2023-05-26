@@ -49,8 +49,8 @@ Another preparatory step is to load the Tabula Muris data, provided as `.robj`. 
 Together with loading the object *it is also important to detail which set of cells we want to analyze*. Tabula muris provides the processed data from all cells from a given tissue in the same file, but more than one set of cells from the same tissue were studied and the raw data is provided separately. To find out which datasets are present in the object, run the next chunk and afterwards `unique(seurat.obj$channel)` and then type it in "dataset" with a "_" afterwards.
 
 ```{r}
-dataset <- "10X_P8_15_"
-load("~/Work/Datasets/Mouse/Robjects/droplet_Trachea_seurat_tiss.Robj")
+dataset <- "10X_P7_8_"
+load("/home/student/Work/TFM/Datasets/Mouse/Robjects/droplet_Lung_seurat_tiss.Robj")
 seurat.obj <- UpdateSeuratObject(tiss)
 rm(tiss)
 ```
@@ -94,8 +94,8 @@ To filter the cells I set a limit visually, looking at the violin plots, on:
 *These filters depend on each dataset and should be changed on each execution.* Set the lower and upper limits manually.
 
 ```{r}
-nCount_threshold <- c(500, 10000)  # subset. Minimum and maximum number of molecules detected in a cell to be kept
-nFeature_threshold <- c(300, 2200) # subset. Minimum and maximum number of features detected in a cell to be kept
+nCount_threshold <- c(500, 15000)  # subset. Minimum and maximum number of molecules detected in a cell to be kept
+nFeature_threshold <- c(300, 2500) # subset. Minimum and maximum number of features detected in a cell to be kept
 percent.ribo_threshold <-5 # subset. Maximum percentage of mitocondrial molecules
 ```
 
@@ -204,7 +204,7 @@ ElbowPlot(seurat.obj.filtered)
 *Chose in the next chunk the number of PC to be kept*
 
 ```{r}
-n.pcs <- 6
+n.pcs <- 13
 ```
 
 ### Shared Nearest Neighbor Clustering
@@ -307,10 +307,10 @@ write.csv(anotated_table,
 Lastly, I want to compare directly how many cells are in the same cluster both from Tabula Muris data and from our data. For that, I save a .csv with the cluster of each barcode.
 
 ```{r}
-idents_TM <- as.data.frame(seurat.obj.filtered$cluster.ids)
-idents_TM <- as.data.frame(cbind(rownames(idents_TM),idents_TM$`seurat.obj.filtered$cluster.ids`))
+idents_TM <- as.data.frame(seurat.obj.filtered$seurat_clusters)
+idents_TM <- as.data.frame(cbind(rownames(idents_TM),idents_TM$`seurat.obj.filtered$seurat_clusters`))
 names(idents_TM)=c("CellBarcodes", "Cluster")
-idents_TM[,1] <- substring(idents_TM[,1],11)
+idents_TM[,1] <- substring(idents_TM[,1],10)
 write.csv(idents_TM, paste(output_path, dataset, "idents.csv",sep = ""), row.names = F)
 ```
 
